@@ -15,99 +15,142 @@ import org.telegram.telegrambots.exceptions.TelegramApiException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.StringTokenizer;
+import java.util.TreeMap;
 
 import static java.lang.Math.toIntExact;
 
 public class Quedadeithor extends TelegramLongPollingBot {
-	
+
 	String hora;
 	String lugar;
-	long usuario;
-	int fase=0;
-	long chat;
-	
+	TreeMap<Long, Sesion> tmapSesion = new TreeMap<Long, Sesion>();
 
-    public void onUpdateReceived(Update update) {    	
+	public void onUpdateReceived(Update update) {
 
-        if (update.hasMessage() && update.getMessage().hasText()) {
-        	
-            String message_text = update.getMessage().getText();
-            long chat_id = update.getMessage().getChatId();
-            
-            message_text = message_text.toLowerCase();
-            
-            if(update.getMessage().isCommand() && message_text.contains("/crearquedada")) {
-               	
-            	if(fase==0) {
-            		mandarmensaje(chat_id,"Vale! dime la Hora a la que quieres quedar", 0);
-            		usuario=update.getMessage().getFrom().getId();
-            		chat=update.getMessage().getChatId();
-            		fase=1;
-            	}else{
-            		mandarmensaje(chat_id,"Espera, ya se está creando otra, puedes cancelarla usando /cancelar", 0);
+		if (update.hasMessage() && update.getMessage().hasText()) {
 
-            	}
-            }else if (update.getMessage().isCommand() && update.getMessage().getText().equals("/cancelar")) {
+			String message_text = update.getMessage().getText();
+			long chat_id = update.getMessage().getChatId();
+
+			message_text = message_text.toLowerCase();
+
+			Sesion s;
+			int fase;
+			long usuario = 0;			
+
+			// Inserta en el arbol
+			if (tmapSesion.get(chat_id) == null) {
+				Sesion s1 = new Sesion();
+				tmapSesion.put(chat_id, s1);
+				fase=0;
+				s = s1;
+			} else { // carga
+				s = tmapSesion.get(chat_id);
+				fase = s.getFase();
+				usuario = s.getUser_id();
+			}
+
+			if (update.getMessage().isCommand() && message_text.contains("/crearquedada")) {
+
+				if (fase == 0) {
+					mandarmensaje(chat_id, "Vale! dime la Hora a la que quieres quedar (formato HH:MM)", 0);
+					usuario = update.getMessage().getFrom().getId();
+					fase = 1;
+					
+					s.setFase(fase);
+					s.setUser_id(usuario);
+					s.setChat_id(chat_id);
+				} else {
+					mandarmensaje(chat_id, "Espera, ya se está creando otra, puedes cancelarla usando /cancelar", 0);
+
+				}
+			} else if (update.getMessage().isCommand() && update.getMessage().getText().equals("/cancelar")) {
 				if (fase != 0) {
 					mandarmensaje(chat_id, "Se ha cancelado la creación de la quedada", 0);
+					s.setFase(0);
+					// fase = 0;
+				}
+
+				// -----------------------------------------------------------------------------------------------------------------
+			} else if (usuario == update.getMessage().getFrom().getId() && fase != 0) {
+
+				switch (fase) {
+
+				case 1: // HORA
+					hora = update.getMessage().getText();
+					StringTokenizer tokens = new StringTokenizer(hora, ":");
+
+					if (tokens.countTokens() == 2) {
+						try {
+
+							int hora = Integer.parseInt(tokens.nextToken());
+							int min = Integer.parseInt(tokens.nextToken());
+							mandarmensaje(chat_id, "Perfecto, dime el Lugar", 0);
+							fase = 2;
+							s.setHora(hora);
+							s.setMin(min);
+
+						} catch (java.lang.NumberFormatException e) {
+							mandarmensaje(chat_id, "Formato incorrecto, sigue este ejemplo 14:30", 0);
+						}
+
+					} else {
+						mandarmensaje(chat_id, "Formato incorrecto, sigue este ejemplo 14:30", 0);
+					}
+
+					break;
+				case 2:
+					lugar = update.getMessage().getText();
 					fase = 0;
-				}      
-   
-//-----------------------------------------------------------------------------------------------------------------
-            }else if(chat==chat_id && usuario==update.getMessage().getFrom().getId() && fase!=0){
-				
-				switch(fase) {
-            	
-            	case 1: //HORA
-            		hora=update.getMessage().getText();
-            		mandarmensaje(chat_id,"Perfecto, dime el Lugar", 0);
-            		fase=2;
-            		break;
-            	case 2:
-            		lugar=update.getMessage().getText();
-            		fase=0;
-            		
-            		SendMessage message = new SendMessage() // Create a message object object
-                            .setChatId(chat_id)
-                            .setText("Se ha quedado a las "+hora+" en "+lugar+", ¿Te apuntas?");
-                    
-                    InlineKeyboardMarkup markupInline = new InlineKeyboardMarkup();
-                    List<List<InlineKeyboardButton>> rowsInline = new ArrayList<List<InlineKeyboardButton>>();
-                    List<InlineKeyboardButton> rowInline = new ArrayList<InlineKeyboardButton>();
-                    
-                    rowInline.add(new InlineKeyboardButton().setText("¡Yo voy!").setCallbackData("meapunto"));
 
-                    
-                    // Set the keyboard to the markup
-                  
-                    rowsInline.add(rowInline);
-                    // Add it to the message
-                    
-                    markupInline.setKeyboard(rowsInline);
-                    message.setReplyMarkup(markupInline);                   
-                    
-                    try {
-                        execute(message); // Sending our message object to user
-                        
-                        anclar(chat_id, update.getMessage().getMessageId()+1);
-                    } catch (TelegramApiException e) {
-                        e.printStackTrace();
-                    }
-            		
-            		break;
-            	}
-							
-			} 
+					SendMessage message = new SendMessage() // Create a message object object
+							.setChatId(chat_id)
+							.setText("Se ha quedado a las " + hora + " en " + lugar + ", ¿Te apuntas?");
 
- //------------------------------------------------------------------------------------
+
+//					Temporizador t=new Temporizador(s.getHora(), s.getMin(), update, this, usuario);
+//					t.start();
+
+					InlineKeyboardMarkup markupInline = new InlineKeyboardMarkup();
+					List<List<InlineKeyboardButton>> rowsInline = new ArrayList<List<InlineKeyboardButton>>();
+					List<InlineKeyboardButton> rowInline = new ArrayList<InlineKeyboardButton>();
+
+					rowInline.add(new InlineKeyboardButton().setText("¡Yo voy!").setCallbackData("meapunto"));
+
+					// Set the keyboard to the markup
+
+					rowsInline.add(rowInline);
+					// Add it to the message
+
+					markupInline.setKeyboard(rowsInline);
+					message.setReplyMarkup(markupInline);
+
+					try {
+						execute(message); // Sending our message object to user
+
+						anclar(chat_id, update.getMessage().getMessageId() + 1);
+					} catch (TelegramApiException e) {
+						e.printStackTrace();
+					}
+
+					break;
+				}
+				s.setFase(fase);
+			}
+
+//			System.out.println(tmapSesion);
+			// ------------------------------------------------------------------------------------
 		} else if (update.hasCallbackQuery()) {
 			// Set variables
 			String call_data = update.getCallbackQuery().getData();
 			long message_id = update.getCallbackQuery().getMessage().getMessageId();
 			long chat_id = update.getCallbackQuery().getMessage().getChatId();
 			String answer = null;
-
+			Sesion s = tmapSesion.get(chat_id);
+			
 			if (call_data.equals("meapunto")) {
+				
+				
 
 				String m = update.getCallbackQuery().getMessage().getText();
 				StringTokenizer st = new StringTokenizer(m, "\n");
@@ -125,7 +168,9 @@ public class Quedadeithor extends TelegramLongPollingBot {
 						rajao.setText("Baia baia, un traidicionador...");
 						rajao.setShowAlert(true);
 						rajao.setCallbackQueryId(update.getCallbackQuery().getId());
+						
 
+						s.parar(chat_id,update.getCallbackQuery().getFrom().getId());
 						try {
 							super.answerCallbackQuery(rajao);
 						} catch (TelegramApiException e) {
@@ -138,8 +183,15 @@ public class Quedadeithor extends TelegramLongPollingBot {
 
 				answer = resultado;
 
-				if (añadir)
+				if (añadir) {
 					answer = update.getCallbackQuery().getMessage().getText() + "\n" + alias + "\n";
+
+					Temporizador temp=new Temporizador(s.getHora(), s.getMin(), update, this, update.getCallbackQuery().getFrom().getId(),chat_id);
+					temp.start();
+					
+					s.añadir(temp,chat_id,update.getCallbackQuery().getFrom().getId());
+					
+				}
 
 			}
 			crearBotones(chat_id, message_id, answer);
